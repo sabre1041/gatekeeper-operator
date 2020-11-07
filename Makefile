@@ -68,6 +68,12 @@ test-e2e: generate fmt vet
 	GOFLAGS=$(GOFLAGS) USE_EXISTING_CLUSTER=true go test -v ./test -coverprofile cover.out -race -args -ginkgo.v -ginkgo.trace
 	kubectl -n gatekeeper-system delete gatekeepers.operator.gatekeeper.sh gatekeeper
 
+.PHONY: test-gatekeeper-e2e
+test-gatekeeper-e2e:
+	kubectl -n gatekeeper-system apply -f ./config/samples/operator_v1alpha1_gatekeeper.yaml
+	bats -t test/bats/test.bats
+	kubectl -n gatekeeper-system delete gatekeepers.operator.gatekeeper.sh gatekeeper
+
 # Build manager binary
 .PHONY: manager
 manager: generate fmt vet manifests
