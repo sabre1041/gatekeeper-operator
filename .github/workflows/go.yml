@@ -49,5 +49,11 @@ jobs:
         make install
         make deploy IMG=localhost:5000/gatekeeper-operator:$GITHUB_SHA
 
-    - name: E2E Tests
-      run: make test-e2e
+    - name: Gatekeeper Operator E2E Tests
+      run: |
+        make test-e2e
+
+    - name: Gatekeeper E2E Tests
+      run: |
+        sudo apt-get install -y bats
+        make test-gatekeeper-e2e
