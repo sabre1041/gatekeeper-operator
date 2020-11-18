@@ -13,3 +13,4 @@ spec:
   webhook:
     replicas: 2
     logLevel: INFO
+    failurePolicy: Fail
