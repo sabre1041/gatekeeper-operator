@@ -22,6 +22,7 @@ teardown() {
 }
 
 @test "namespace label webhook is serving" {
+  skip "TODO: This test is temporarily disabled due to kubectl port-forward issues in the Github virtual environment."
   cert=$(mktemp)
   CLEAN_CMD+="; rm -f ${cert}"
   wait_for_process $WAIT_TIME $SLEEP_TIME "get_ca_cert ${cert}"
