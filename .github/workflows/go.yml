@@ -20,18 +20,18 @@ jobs:
       with:
         go-version: ${{ matrix.go }}
 
-    - name: Verify modules
-      run: go mod verify
+          #- name: Verify modules
+          #  run: go mod verify
 
-    - name: Verify format
-      run: |
-        make fmt
-        git diff --exit-code
+          #- name: Verify format
+          #  run: |
+          #    make fmt
+          #    git diff --exit-code
 
-    - name: Verify manifests
-      run: |
-        make manifests
-        git diff --exit-code
+          #- name: Verify manifests
+          #  run: |
+          #    make manifests
+          #    git diff --exit-code
 
     - name: Create K8s KinD Cluster
       run: make test-cluster
@@ -41,17 +41,17 @@ jobs:
         make docker-build IMG=localhost:5000/gatekeeper-operator:$GITHUB_SHA
         make docker-push IMG=localhost:5000/gatekeeper-operator:$GITHUB_SHA
 
-    - name: Unit and Integration Tests
-      run: make test
+        #- name: Unit and Integration Tests
+        #  run: make test
 
     - name: Deploy Gatekeeper Operator
       run: |
         make install
         make deploy IMG=localhost:5000/gatekeeper-operator:$GITHUB_SHA
 
-    - name: Gatekeeper Operator E2E Tests
-      run: |
-        make test-e2e
+        #- name: Gatekeeper Operator E2E Tests
+        #  run: |
+        #    make test-e2e
 
     - name: Gatekeeper E2E Tests
       run: |

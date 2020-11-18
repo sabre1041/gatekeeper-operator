@@ -71,8 +71,10 @@ test-e2e: generate fmt vet
 .PHONY: test-gatekeeper-e2e
 test-gatekeeper-e2e:
 	kubectl -n gatekeeper-system apply -f ./config/samples/operator_v1alpha1_gatekeeper.yaml
+	sleep 60
+	kubectl get all -A
 	bats -t test/bats/test.bats
-	kubectl -n gatekeeper-system delete gatekeepers.operator.gatekeeper.sh gatekeeper
+	#kubectl -n gatekeeper-system delete gatekeepers.operator.gatekeeper.sh gatekeeper
 
 # Build manager binary
 .PHONY: manager
