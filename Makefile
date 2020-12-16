@@ -1,8 +1,10 @@
 SHELL := /bin/bash
+# Detect the OS to set per-OS defaults
+OS_NAME = $(shell uname -s)
 # Current Operator version
 VERSION ?= 0.0.1
 # Current Gatekeeper version
-GATEKEEPER_VERSION ?= v3.2.1
+GATEKEEPER_VERSION ?= v3.2.2
 # Default image repo
 REPO ?= quay.io/gatekeeper
 # Default bundle image tag
@@ -11,6 +13,8 @@ BUNDLE_IMG ?= $(REPO)/gatekeeper-operator-bundle:$(VERSION)
 BUNDLE_INDEX_IMG ?= $(REPO)/gatekeeper-operator-bundle-index:$(VERSION)
 # Default namespace
 NAMESPACE ?= gatekeeper-system
+# Default Kubernetes distribution
+KUBE_DISTRIBUTION ?= vanilla
 # Options for 'bundle-build'
 ifneq ($(origin CHANNELS), undefined)
 BUNDLE_CHANNELS := --channels=$(CHANNELS)
@@ -26,6 +30,12 @@ IMG ?= $(REPO)/gatekeeper-operator:latest
 CRD_OPTIONS ?= "crd:trivialVersions=true"
 
 GATEKEEPER_MANIFEST_DIR ?= config/gatekeeper
+
+ifeq (openshift, $(KUBE_DISTRIBUTION))
+RBAC_DIR=config/rbac/overlays/openshift
+else
+RBAC_DIR=config/rbac/base
+endif
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -56,6 +66,23 @@ ifeq (, $(shell which opm))
 OPM=$(GOBIN)/opm
 else
 OPM=$(shell which opm)
+endif
+
+# operator-sdk variables
+# ======================
+OPERATOR_SDK_VERSION ?= v1.2.0
+ifeq ($(OS_NAME), Linux)
+    OPERATOR_SDK_URL=https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk-$(OPERATOR_SDK_VERSION)-x86_64-linux-gnu
+else ifeq ($(OS_NAME), Darwin)
+    OPERATOR_SDK_URL=https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk-$(OPERATOR_SDK_VERSION)-x86_64-apple-darwin
+endif
+
+# Get the current operator-sdk binary. If there isn't any, we'll use the
+# GOBIN path
+ifeq (, $(shell which operator-sdk))
+OPERATOR_SDK=$(GOBIN)/operator-sdk
+else
+OPERATOR_SDK=$(shell which operator-sdk)
 endif
 
 # Use the vendored directory
@@ -101,13 +128,14 @@ uninstall: manifests kustomize
 .PHONY: deploy
 deploy: manifests kustomize
 	cd config/default && $(KUSTOMIZE) edit set namespace $(NAMESPACE)
+	cd $(RBAC_DIR) && $(KUSTOMIZE) edit set namespace $(NAMESPACE)
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
+	{ $(KUSTOMIZE) build config/default ; echo "---" ; $(KUSTOMIZE) build $(RBAC_DIR) ; } | kubectl apply -f -
 
 # Generate manifests e.g. CRD, RBAC etc.
 .PHONY: manifests
 manifests: controller-gen
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases output:rbac:dir=config/rbac/base
 
 # Import Gatekeeper manifests
 .PHONY: import-manifests
@@ -217,13 +245,20 @@ $(OPM):
 	rm -rf $$OPM_GEN_TMP_DIR ;\
 	}
 
+.PHONY: operator-sdk
+operator-sdk: $(OPERATOR_SDK)
+
+$(OPERATOR_SDK):
+	curl -L $(OPERATOR_SDK_URL) -o $(OPERATOR_SDK) || (echo "curl returned $$? trying to fetch operator-sdk. Please install operator-sdk and try again"; exit 1)
+	chmod +x $(OPERATOR_SDK)
+
 # Generate bundle manifests and metadata, then validate generated files.
 .PHONY: bundle
-bundle: manifests
-	operator-sdk generate kustomize manifests -q
+bundle: operator-sdk manifests
+	$(OPERATOR_SDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	operator-sdk bundle validate ./bundle
+	{ $(KUSTOMIZE) build config/manifests ; echo "---" ; $(KUSTOMIZE) build $(RBAC_DIR) ; } | $(OPERATOR_SDK) generate bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
+	$(OPERATOR_SDK) bundle validate ./bundle
 
 # Build the bundle image.
 .PHONY: bundle-build
@@ -246,3 +281,16 @@ tidy:
 .PHONY: test-cluster
 test-cluster:
 	./scripts/kind-with-registry.sh
+
+.PHONY: test-gatekeeper-e2e
+test-gatekeeper-e2e:
+	kubectl -n $(NAMESPACE) apply -f ./config/samples/operator_v1alpha1_gatekeeper.yaml
+	bats -t test/bats/test.bats
+
+.PHONY: deploy-ci
+deploy-ci: deploy-ci-namespace deploy
+
+.PHONY: deploy-ci-namespace
+deploy-ci-namespace: install
+	kubectl create namespace --dry-run=client -o yaml $(NAMESPACE) | kubectl apply -f-
+	sed -i 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' config/manager/manager.yaml
